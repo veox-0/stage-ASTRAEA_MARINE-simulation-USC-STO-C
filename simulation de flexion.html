@@ -1,0 +1,767 @@
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dimensionnement Coque Navire</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { 
+            background-color: #f8fafc; /* slate-50 */
+            font-family: 'Inter', sans-serif;
+        }
+        /* Masquer les flèches des inputs number par défaut pour un look plus propre */
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { 
+            opacity: 0.5;
+            transition: opacity 0.2s;
+        }
+        input[type="number"]:hover::-webkit-inner-spin-button {
+            opacity: 1;
+        }
+        /* Effet de grille pour le canvas */
+        .canvas-grid {
+            background-image: 
+                linear-gradient(to right, #e2e8f0 1px, transparent 1px),
+                linear-gradient(to bottom, #e2e8f0 1px, transparent 1px);
+            background-size: 40px 40px;
+            background-position: center center;
+        }
+        /* Scrollbar personnalisée */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Animation de la jauge */
+        .gauge-transition { transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s; }
+    </style>
+</head>
+<body class="text-slate-800 p-4 md:p-6 lg:p-8 min-h-screen">
+
+    <div class="max-w-[1400px] mx-auto space-y-6">
+        
+        <!-- Header Premium -->
+        <header class="bg-slate-900 text-white p-6 md:p-8 rounded-3xl shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between relative overflow-hidden">
+            <!-- Décoration de fond -->
+            <div class="absolute top-0 right-0 -mt-16 -mr-16 text-slate-800 opacity-50">
+                <svg class="w-64 h-64" fill="currentColor" viewBox="0 0 24 24"><path d="M21 16.09v-4.992c0-4.288-2.614-8.03-6.666-9.522a.75.75 0 00-.528.026L5.558 5.48A10.74 10.74 0 001.5 15.012v3.638c0 .267.14.512.373.63l7.5 3.824a.75.75 0 00.687-.015l10.5-5.833a.75.75 0 00.44-.666zM10.125 19.86l-6.375-3.251v-1.597l7.147 3.522a.75.75 0 00.672-.016l8.681-4.822v1.444l-10.125 5.623v-1.5zM11.25 16.634l-8.25-4.066a9.24 9.24 0 013.432-8.083l7.639-3.415a9.25 9.25 0 013.429 8.082l-6.25 3.481v4.001z"></path></svg>
+            </div>
+            
+            <div class="relative z-10">
+                <div class="flex items-center space-x-3 mb-2">
+                    <div class="p-2 bg-blue-500/20 rounded-lg text-blue-400 border border-blue-500/30">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                    </div>
+                    <h1 class="text-3xl font-extrabold tracking-tight">Dimensionnement Coque</h1>
+                </div>
+                <p class="text-slate-400 font-medium max-w-xl text-sm md:text-base">Outil d'ingénierie : Simulation d'un profilé en U intégré dans une plateforme mobile (Appuis simples, Charge répartie).</p>
+            </div>
+            
+            <div class="relative z-10 mt-6 md:mt-0 flex flex-col items-end">
+                <span class="px-4 py-2 bg-slate-800 text-slate-300 text-sm font-semibold rounded-full border border-slate-700 shadow-inner flex items-center">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 mr-2 animate-pulse"></span>
+                    Moteur de calcul RDM actif
+                </span>
+            </div>
+        </header>
+
+        <!-- Layout Principal -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+            
+            <!-- COLONNE GAUCHE : Formulaires -->
+            <div class="lg:col-span-4 space-y-6">
+                
+                <form id="rdm-form" class="space-y-6">
+                    
+                    <!-- Carte : Géométrie -->
+                    <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200/60 hover:shadow-md transition-shadow duration-300">
+                        <div class="flex items-center space-x-3 mb-6 border-b border-slate-100 pb-4">
+                            <div class="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
+                            </div>
+                            <h2 class="text-lg font-bold text-slate-800">Géométrie du profilé (U)</h2>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-x-4 gap-y-5">
+                            <div class="col-span-2">
+                                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Longueur de portée (L)</label>
+                                <div class="flex bg-white border border-slate-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all shadow-sm">
+                                    <input type="number" id="p_L" value="1130" step="10" class="w-full px-4 py-2.5 text-slate-900 font-semibold focus:outline-none bg-transparent">
+                                    <span class="px-3 flex items-center justify-center bg-slate-50 text-slate-400 font-medium border-l border-slate-200 text-sm">mm</span>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Largeur (b)</label>
+                                <div class="flex bg-white border border-slate-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all shadow-sm">
+                                    <input type="number" id="p_b" value="120" step="1" class="w-full px-3 py-2 text-slate-900 font-semibold focus:outline-none bg-transparent">
+                                    <span class="px-2 flex items-center bg-slate-50 text-slate-400 text-xs font-medium border-l border-slate-200">mm</span>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Hauteur (h)</label>
+                                <div class="flex bg-white border border-slate-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all shadow-sm">
+                                    <input type="number" id="p_h" value="100" step="1" class="w-full px-3 py-2 text-slate-900 font-semibold focus:outline-none bg-transparent">
+                                    <span class="px-2 flex items-center bg-slate-50 text-slate-400 text-xs font-medium border-l border-slate-200">mm</span>
+                                </div>
+                            </div>
+                            
+                            <div class="col-span-2">
+                                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Épaisseur de paroi (e)</label>
+                                <div class="flex bg-white border border-slate-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all shadow-sm">
+                                    <input type="number" id="p_e" value="1.2" step="0.1" class="w-full px-4 py-2.5 text-slate-900 font-semibold focus:outline-none bg-transparent">
+                                    <span class="px-3 flex items-center bg-slate-50 text-slate-400 text-sm font-medium border-l border-slate-200">mm</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Mini Canvas de Coupe Intégré -->
+                        <div class="mt-5 pt-5 border-t border-slate-100">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Aperçu en coupe</span>
+                                <span class="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-medium">Temps réel</span>
+                            </div>
+                            <div class="bg-slate-50 rounded-xl border border-slate-200 p-2 flex justify-center">
+                                <canvas id="sectionCanvas" width="200" height="120" class="w-full max-w-[200px] h-[120px]"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Carte : Masses & Répartition -->
+                    <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200/60 hover:shadow-md transition-shadow duration-300">
+                        <div class="flex items-center space-x-3 mb-6 border-b border-slate-100 pb-4">
+                            <div class="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path></svg>
+                            </div>
+                            <h2 class="text-lg font-bold text-slate-800">Charges Appliquées</h2>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="flex flex-col justify-end">
+                                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Masse Totale (Coque)</label>
+                                <div class="flex bg-white border border-slate-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500 focus-within:border-emerald-500 transition-all shadow-sm">
+                                    <input type="number" id="p_masse" value="100" step="5" class="w-full px-4 py-2.5 text-slate-900 font-semibold focus:outline-none bg-transparent">
+                                    <span class="px-3 flex items-center bg-slate-50 text-slate-400 text-sm font-medium border-l border-slate-200">kg</span>
+                                </div>
+                            </div>
+                            <div class="flex flex-col justify-end">
+                                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Poutres porteuses</label>
+                                <div class="flex bg-blue-50 border border-blue-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all shadow-sm">
+                                    <input type="number" id="p_nb_poutres" value="2" min="1" step="1" class="w-full px-4 py-2.5 text-blue-900 font-bold focus:outline-none bg-transparent text-center">
+                                    <span class="px-3 flex items-center bg-blue-100/50 text-blue-600 text-sm font-bold border-l border-blue-200">U</span>
+                                </div>
+                            </div>
+                            <div class="col-span-2 text-xs text-slate-500 mt-1 leading-relaxed italic">
+                                La masse totale de la coque est divisée équitablement sur ce nombre de poutres pour le calcul.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Carte : Matériau -->
+                    <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200/60 hover:shadow-md transition-shadow duration-300">
+                        <div class="flex items-center space-x-3 mb-6 border-b border-slate-100 pb-4">
+                            <div class="p-2 bg-rose-50 text-rose-600 rounded-lg">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                            </div>
+                            <h2 class="text-lg font-bold text-slate-800">Propriétés Matériau</h2>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-x-4 gap-y-5">
+                            <div class="col-span-2">
+                                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Module d'Young (E) <span class="normal-case font-normal ml-1">Carbone/Epoxy</span></label>
+                                <div class="flex bg-white border border-slate-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-rose-500 focus-within:border-rose-500 transition-all shadow-sm">
+                                    <input type="number" id="p_E" value="135000" step="1000" class="w-full px-4 py-2.5 text-slate-900 font-semibold focus:outline-none bg-transparent">
+                                    <span class="px-3 flex items-center bg-slate-50 text-slate-400 text-sm font-medium border-l border-slate-200">MPa</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Limite Rupture</label>
+                                <div class="flex bg-white border border-slate-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-rose-500 focus-within:border-rose-500 transition-all shadow-sm">
+                                    <input type="number" id="p_rupture" value="600" step="10" class="w-full px-3 py-2 text-slate-900 font-semibold focus:outline-none bg-transparent">
+                                    <span class="px-2 flex items-center bg-slate-50 text-slate-400 text-xs font-medium border-l border-slate-200">MPa</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-purple-600 uppercase tracking-wider mb-1.5">Sécurité</label>
+                                <div class="flex bg-purple-50 border border-purple-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-purple-500 focus-within:border-purple-500 transition-all shadow-sm">
+                                    <span class="px-3 flex items-center text-purple-500 font-bold border-r border-purple-200 bg-purple-100/50">×</span>
+                                    <input type="number" id="p_secu" value="4" step="0.5" class="w-full px-3 py-2 text-purple-900 font-bold focus:outline-none bg-transparent text-center">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- COLONNE DROITE : Visualisation & Résultats (Sticky) -->
+            <div class="lg:col-span-8 space-y-6 lg:sticky lg:top-6 self-start pb-8">
+                
+                <!-- JAUGE DE CONTRAINTE GLOBALE -->
+                <div class="bg-white p-5 rounded-3xl shadow-sm border border-slate-200/60 mb-6">
+                    <div class="flex justify-between items-end mb-2">
+                        <div>
+                            <h3 class="text-sm font-extrabold text-slate-800 uppercase tracking-widest">Taux de charge (Stress)</h3>
+                            <p class="text-xs text-slate-500 font-medium mt-0.5">Pourcentage d'utilisation de la limite matérielle.</p>
+                        </div>
+                        <div class="text-right">
+                            <span id="gauge_percent" class="text-2xl font-black tracking-tighter text-blue-600">0%</span>
+                        </div>
+                    </div>
+                    
+                    <!-- La barre de progression -->
+                    <div class="w-full bg-slate-100 rounded-full h-4 mt-3 relative overflow-hidden shadow-inner">
+                        <!-- Marqueur de la limite de sécurité -->
+                        <div id="gauge_secu_marker" class="absolute top-0 bottom-0 w-0.5 bg-purple-500 z-10 transition-all duration-300" style="left: 25%;"></div>
+                        <!-- Barre de remplissage colorée -->
+                        <div id="gauge_fill" class="h-4 rounded-full gauge-transition bg-blue-500" style="width: 0%;"></div>
+                    </div>
+                    
+                    <div class="flex justify-between mt-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                        <span>Repos</span>
+                        <span id="gauge_secu_text" class="text-purple-500 transition-all duration-300 relative -ml-10">Limite Sécu</span>
+                        <span id="gauge_limit_text" class="text-red-500">Rupture (600 MPa)</span>
+                    </div>
+                </div>
+
+                <!-- Zone de dessin principale -->
+                <div class="bg-white p-2 rounded-3xl shadow-sm border border-slate-200/60 flex flex-col overflow-hidden">
+                    <!-- En-tête de la zone de dessin -->
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center px-4 py-3 bg-slate-50/50 border-b border-slate-100 rounded-t-2xl mb-2">
+                        <div class="flex items-center space-x-2">
+                            <span class="flex h-2.5 w-2.5">
+                                <span class="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-blue-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                            </span>
+                            <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wide">Simulation de contrainte</h2>
+                        </div>
+                        <div class="flex items-center space-x-3 mt-3 sm:mt-0 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
+                            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                            <label class="text-xs font-semibold text-slate-600">Exagération visuelle</label>
+                            <input type="range" id="p_visuel" min="1" max="200" value="100" class="w-20 accent-blue-500">
+                        </div>
+                    </div>
+                    
+                    <!-- Le Canvas -->
+                    <div class="w-full relative bg-white rounded-2xl overflow-hidden canvas-grid border border-slate-100" style="min-height: 380px;">
+                        <canvas id="beamCanvas" class="absolute inset-0 w-full h-full"></canvas>
+                        
+                        <!-- Overlay d'alerte Rupture -->
+                        <div id="alert-rupture" class="hidden absolute top-4 inset-x-4 max-w-md mx-auto bg-red-600/95 backdrop-blur border border-red-500 text-white p-4 rounded-2xl shadow-2xl animate-pulse z-10 flex items-center justify-between">
+                            <div class="flex items-center">
+                                <div class="bg-white/20 p-2 rounded-full mr-3">
+                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                </div>
+                                <div>
+                                    <p class="font-bold text-lg leading-tight">RUPTURE DE LA POUTRE</p>
+                                    <p class="text-red-100 text-sm">La contrainte dépasse la limite matérielle.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GRILLES DE RÉSULTATS (2 colonnes) -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <!-- Colonne 1 : Réalité Physique -->
+                    <div class="bg-white p-1 rounded-3xl shadow-sm border border-slate-200/60 flex flex-col h-full overflow-hidden">
+                        <div class="bg-slate-50 p-4 border-b border-slate-100 rounded-t-3xl">
+                            <h3 class="text-sm font-extrabold text-slate-800 uppercase tracking-widest flex items-center">
+                                <span class="w-2 h-2 rounded-full bg-slate-400 mr-2"></span>
+                                Physique & Bruts
+                            </h3>
+                        </div>
+                        
+                        <div class="p-5 grid grid-cols-2 gap-4 flex-grow">
+                            <div>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Inertie de section</p>
+                                <p class="text-xl font-black text-slate-800 tracking-tight" id="res_I">0</p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] font-bold text-teal-500 uppercase tracking-widest mb-1">Flèche Max</p>
+                                <p class="text-xl font-black text-slate-800 tracking-tight" id="res_fleche">0</p>
+                            </div>
+                            <div class="col-span-2 h-px bg-slate-100 my-1"></div>
+                            <div>
+                                <p class="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">Moment Max</p>
+                                <p class="text-xl font-black text-slate-800 tracking-tight" id="res_M">0</p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-1">Contrainte Max</p>
+                                <p class="text-2xl font-black text-slate-800 tracking-tight" id="res_sigma">0</p>
+                            </div>
+                        </div>
+
+                        <!-- Panneau Statut Physique -->
+                        <div class="p-4 bg-slate-50 border-t border-slate-100 rounded-b-3xl">
+                            <div id="status-panel" class="p-3 rounded-xl border flex flex-row items-center justify-between transition-colors duration-300">
+                                <div>
+                                    <h3 class="text-xs font-bold uppercase tracking-wider mb-0.5" id="status-title">Statut</h3>
+                                    <p class="text-xs font-medium opacity-80" id="status-desc">--</p>
+                                </div>
+                                <div id="status-icon" class="hidden sm:block"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Colonne 2 : Dimensionnement (Sécurité) -->
+                    <div class="bg-white p-1 rounded-3xl shadow-sm border border-purple-200/60 flex flex-col h-full overflow-hidden relative">
+                        <!-- Décoration fond violet -->
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-purple-100 rounded-full blur-3xl opacity-50 -mr-10 -mt-10 pointer-events-none"></div>
+                        
+                        <div class="bg-purple-50/50 p-4 border-b border-purple-100 rounded-t-3xl flex justify-between items-center relative z-10">
+                            <h3 class="text-sm font-extrabold text-purple-900 uppercase tracking-widest flex items-center">
+                                <span class="w-2 h-2 rounded-full bg-purple-500 mr-2"></span>
+                                Dimensionnement
+                            </h3>
+                            <span class="text-xs font-black text-purple-700 bg-purple-200/50 px-2 py-1 rounded-md">Coef x<span id="label_coef"></span></span>
+                        </div>
+                        
+                        <div class="p-5 grid grid-cols-1 gap-5 flex-grow relative z-10">
+                            <div class="bg-white p-4 rounded-2xl border border-purple-100 shadow-sm flex justify-between items-center">
+                                <div>
+                                    <p class="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-1">Moment (Majoré)</p>
+                                    <p class="text-xl font-black text-purple-950 tracking-tight" id="res_M_secu">0</p>
+                                </div>
+                                <div class="h-10 w-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-300">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                </div>
+                            </div>
+                            <div class="bg-white p-4 rounded-2xl border border-purple-100 shadow-sm flex justify-between items-center">
+                                <div>
+                                    <p class="text-[10px] font-bold text-purple-600 uppercase tracking-widest mb-1">Contrainte Dimensionnement</p>
+                                    <p class="text-3xl font-black text-purple-950 tracking-tight" id="res_sigma_secu">0</p>
+                                </div>
+                                <div class="h-12 w-12 rounded-full bg-purple-100 flex items-center justify-center text-purple-500">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Panneau de Conformité -->
+                        <div class="p-4 bg-purple-50/50 border-t border-purple-100 rounded-b-3xl relative z-10">
+                            <div id="status-secu-panel" class="p-3.5 rounded-xl border flex items-center justify-center text-sm font-bold transition-colors duration-300 shadow-inner">
+                                <span id="status-secu-text" class="flex items-center">Évaluation...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Récupération des éléments DOM ---
+        const inputs = document.querySelectorAll('input');
+        const canvas = document.getElementById('beamCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Résultats
+        const res_I = document.getElementById('res_I');
+        const res_M = document.getElementById('res_M');
+        const res_M_secu = document.getElementById('res_M_secu');
+        const res_sigma = document.getElementById('res_sigma');
+        const res_sigma_secu = document.getElementById('res_sigma_secu');
+        const res_fleche = document.getElementById('res_fleche');
+        const label_coef = document.getElementById('label_coef');
+        
+        // Statut & Alertes
+        const statusPanel = document.getElementById('status-panel');
+        const statusTitle = document.getElementById('status-title');
+        const statusDesc = document.getElementById('status-desc');
+        const statusIcon = document.getElementById('status-icon');
+        const alertRupture = document.getElementById('alert-rupture');
+
+        const statusSecuPanel = document.getElementById('status-secu-panel');
+        const statusSecuText = document.getElementById('status-secu-text');
+
+        const sectionCanvas = document.getElementById('sectionCanvas');
+        const sCtx = sectionCanvas.getContext('2d');
+
+        // Helper pour afficher les unités proprement
+        function formatVal(val, decimals, unit) {
+            return `${val.toLocaleString('fr-FR', {maximumFractionDigits: decimals})} <span class="text-xs font-semibold opacity-60 ml-0.5">${unit}</span>`;
+        }
+
+        // Gestion du redimensionnement du canvas
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width * window.devicePixelRatio;
+            canvas.height = rect.height * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            canvas.style.width = `${rect.width}px`;
+            canvas.style.height = `${rect.height}px`;
+            calculateRDM();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        // --- Logique Principale RDM ---
+        function calculateRDM() {
+            // 1. Lecture des valeurs géométrie
+            const L = parseFloat(document.getElementById('p_L').value) || 1;
+            const b = parseFloat(document.getElementById('p_b').value) || 1;
+            const h = parseFloat(document.getElementById('p_h').value) || 1;
+            const e = parseFloat(document.getElementById('p_e').value) || 0.1;
+            
+            // 2. Lecture masses et constantes
+            const masse_totale = parseFloat(document.getElementById('p_masse').value) || 0;
+            const nb_poutres = parseInt(document.getElementById('p_nb_poutres').value) || 1;
+            const E = parseFloat(document.getElementById('p_E').value) || 1;
+            const rupture = parseFloat(document.getElementById('p_rupture').value) || 1;
+            const secu = parseFloat(document.getElementById('p_secu').value) || 1;
+
+            // Force répartie sur une seule poutre (Newtons)
+            const masse_par_poutre = masse_totale / nb_poutres;
+            const F = masse_par_poutre * 9.81;
+
+            // 3. Calculs Inertie (I) pour profilé en U
+            const aire_base = b * e;
+            const y_base = e / 2;
+            const h_aile = Math.max(0, h - e);
+            const aire_ailes = 2 * (h_aile * e);
+            const y_ailes = e + (h_aile / 2);
+            
+            const aire_totale = aire_base + aire_ailes;
+            const y_G = ((aire_base * y_base) + (aire_ailes * y_ailes)) / aire_totale; 
+            const v_max = Math.max(y_G, h - y_G);
+
+            const I_base = (b * Math.pow(e, 3)) / 12 + aire_base * Math.pow(y_G - y_base, 2);
+            const I_ailes = 2 * ((e * Math.pow(h_aile, 3)) / 12 + (h_aile * e) * Math.pow(y_G - y_ailes, 2));
+            const I = I_base + I_ailes;
+
+            // 4. Formules RDM (Modèle figé : Appuis Simples & Charge Répartie)
+            const M_max = (F * L) / 8;
+            const fleche = (5 * F * Math.pow(L, 3)) / (384 * E * I);
+            const sigma = (M_max * v_max) / I;
+            
+            // Dimensionnement
+            const sigma_secu = sigma * secu;
+            const M_max_secu = M_max * secu;
+
+            // --- Dessin de la section (Coupe U) ---
+            drawSection(b, h, e, y_G);
+
+            // 5. Analyse des états pour l'affichage couleur
+            const estCasse = sigma >= rupture;
+            const depasseSecu = sigma_secu >= rupture;
+            // Orange si la contrainte réelle approche 85% de la rupture OU si flèche > L/200
+            const alertePhysique = !estCasse && (sigma >= rupture * 0.85 || fleche > L / 200);
+
+            // Définition de la couleur principale
+            let couleurPoutre = '#3B82F6'; // Bleu par défaut
+            if (estCasse) couleurPoutre = '#EF4444'; // Rouge
+            else if (alertePhysique) couleurPoutre = '#F97316'; // Orange
+            else if (depasseSecu) couleurPoutre = '#EAB308'; // Jaune
+            
+            // --- GESTION DE LA JAUGE ---
+            const percent = Math.min((sigma / rupture) * 100, 100);
+            const limitSecuPercent = Math.min((1 / secu) * 100, 100);
+            
+            const fill = document.getElementById('gauge_fill');
+            const percentText = document.getElementById('gauge_percent');
+            
+            fill.style.width = `${percent}%`;
+            percentText.innerText = `${percent.toFixed(1)}%`;
+            document.getElementById('gauge_secu_marker').style.left = `${limitSecuPercent}%`;
+            document.getElementById('gauge_limit_text').innerText = `Rupture (${rupture} MPa)`;
+            
+            fill.style.backgroundColor = couleurPoutre;
+            percentText.style.color = couleurPoutre;
+
+            // --- Mise à jour de l'UI (Texte & Valeurs) ---
+            res_I.innerHTML = formatVal(I, 0, 'mm⁴');
+            res_M.innerHTML = formatVal(M_max, 1, 'N.mm');
+            res_M_secu.innerHTML = formatVal(M_max_secu, 1, 'N.mm');
+            res_sigma.innerHTML = formatVal(sigma, 2, 'MPa');
+            res_sigma_secu.innerHTML = formatVal(sigma_secu, 2, 'MPa');
+            res_fleche.innerHTML = formatVal(fleche, 4, 'mm');
+            label_coef.innerText = secu;
+
+            // --- Mise à jour des Alertes Visuelles ---
+            alertRupture.classList.toggle('hidden', !estCasse);
+            const baseStatusClass = "p-3 rounded-xl border flex flex-row items-center justify-between transition-colors duration-300 shadow-inner ";
+
+            if (estCasse) {
+                statusPanel.className = baseStatusClass + "bg-red-100/50 border-red-300 text-red-900";
+                statusTitle.innerText = "DANGER : RUPTURE PHYSIQUE !";
+                statusTitle.className = "text-xs font-bold uppercase tracking-wider mb-0.5 text-red-700";
+                statusDesc.innerText = `La contrainte réelle (${sigma.toFixed(1)} MPa) dépasse la limite (${rupture} MPa).`;
+                statusIcon.innerHTML = `<svg class="w-7 h-7 text-red-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg>`;
+            } else if (alertePhysique) {
+                statusPanel.className = baseStatusClass + "bg-orange-100/50 border-orange-300 text-orange-900";
+                statusTitle.innerText = "ALERTE : Résultats bruts critiques";
+                statusTitle.className = "text-xs font-bold uppercase tracking-wider mb-0.5 text-orange-700";
+                statusDesc.innerText = `Déformation ou contrainte dangereusement élevée.`;
+                statusIcon.innerHTML = `<svg class="w-7 h-7 text-orange-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>`;
+            } else if (depasseSecu) {
+                statusPanel.className = baseStatusClass + "bg-yellow-100/50 border-yellow-300 text-yellow-900";
+                statusTitle.innerText = "SÉCURITÉ DÉPASSÉE";
+                statusTitle.className = "text-xs font-bold uppercase tracking-wider mb-0.5 text-yellow-700";
+                statusDesc.innerText = `La poutre tient, mais la limite virtuelle est franchie.`;
+                statusIcon.innerHTML = `<svg class="w-7 h-7 text-yellow-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>`;
+            } else {
+                statusPanel.className = baseStatusClass + "bg-blue-50 border-blue-200 text-blue-900";
+                statusTitle.innerText = "PHYSIQUEMENT STABLE";
+                statusTitle.className = "text-xs font-bold uppercase tracking-wider mb-0.5 text-blue-700";
+                let marge = rupture - sigma;
+                statusDesc.innerText = `Marge avant rupture : ${marge.toFixed(1)} MPa`;
+                statusIcon.innerHTML = `<svg class="w-7 h-7 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>`;
+            }
+
+            // Statut Dimensionnement
+            if (estCasse || alertePhysique) {
+                statusSecuPanel.className = "p-3.5 rounded-xl border flex items-center justify-center text-sm font-bold bg-red-100/80 border-red-300 text-red-800 shadow-inner";
+                statusSecuText.innerHTML = `<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ÉCHEC CRITIQUE (Structure invalide)`;
+            } else if (depasseSecu) {
+                statusSecuPanel.className = "p-3.5 rounded-xl border flex items-center justify-center text-sm font-bold bg-yellow-100/80 border-yellow-300 text-yellow-800 shadow-inner";
+                statusSecuText.innerHTML = `<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> NON CONFORME (Sécurité insuffisante)`;
+            } else {
+                statusSecuPanel.className = "p-3.5 rounded-xl border flex items-center justify-center text-sm font-bold bg-purple-100/80 border-purple-300 text-purple-800 shadow-inner";
+                statusSecuText.innerHTML = `<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> CONFORME (Coefficient validé)`;
+            }
+
+            // --- 6. Dessin de la Poutre ---
+            drawBeam(L, fleche, estCasse, masse_par_poutre, couleurPoutre);
+        }
+
+        // Fonction pour dessiner la coupe
+        function drawSection(b, h, e, y_G) {
+            const w = sectionCanvas.width;
+            const ch = sectionCanvas.height;
+            sCtx.clearRect(0, 0, w, ch);
+
+            const pad = 15;
+            const availW = w - pad * 2;
+            const availH = ch - pad * 2;
+            
+            const maxDim = Math.max(b, h);
+            const scale = Math.min(availW / maxDim, availH / maxDim);
+            
+            const scaledB = b * scale;
+            const scaledH = h * scale;
+            const scaledE = Math.max(e * scale, 3); 
+            
+            const offsetX = (w - scaledB) / 2;
+            const offsetY = (ch - scaledH) / 2 + 5; // Décale un peu vers le bas pour le texte de l'axe neutre
+
+            // Dessin matière (Bleu gris)
+            sCtx.fillStyle = '#64748b';
+            sCtx.beginPath();
+            sCtx.moveTo(offsetX, offsetY); 
+            sCtx.lineTo(offsetX, offsetY + scaledH); 
+            sCtx.lineTo(offsetX + scaledB, offsetY + scaledH); 
+            sCtx.lineTo(offsetX + scaledB, offsetY); 
+            sCtx.lineTo(offsetX + scaledB - scaledE, offsetY); 
+            sCtx.lineTo(offsetX + scaledB - scaledE, offsetY + scaledH - scaledE); 
+            sCtx.lineTo(offsetX + scaledE, offsetY + scaledH - scaledE); 
+            sCtx.lineTo(offsetX + scaledE, offsetY); 
+            sCtx.closePath();
+            sCtx.fill();
+
+            // Axe neutre
+            const scaledYG = y_G * scale;
+            const axisY = offsetY + scaledH - scaledYG;
+            
+            sCtx.beginPath();
+            sCtx.setLineDash([4, 4]);
+            sCtx.strokeStyle = '#ef4444'; 
+            sCtx.lineWidth = 1.5;
+            sCtx.moveTo(10, axisY);
+            sCtx.lineTo(w - 10, axisY);
+            sCtx.stroke();
+            sCtx.setLineDash([]);
+            
+            sCtx.fillStyle = '#ef4444';
+            sCtx.font = 'bold 10px sans-serif';
+            sCtx.fillText('Axe neutre', 10, axisY - 4);
+        }
+
+        // Fonction pour dessiner la poutre et les charges
+        function drawBeam(L_reel, fleche_reelle, estCasse, masse_sur_poutre, couleurPoutre) {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+            
+            ctx.clearRect(0, 0, w, h);
+
+            const marginX = w * 0.15; 
+            const beamY = h * 0.5;   
+            const spanVisuel = w - 2 * marginX;
+
+            const matWidth = w * 0.04; 
+            
+            // 1. Dessiner les mâts (traversants de haut en bas)
+            const matColor = '#e2e8f0'; // Gris très clair pour contraster avec la poutre
+            const matStroke = '#cbd5e1';
+            
+            ctx.fillStyle = matColor;
+            ctx.strokeStyle = matStroke;
+            ctx.lineWidth = 2;
+            
+            // Mat Gauche
+            ctx.beginPath();
+            ctx.roundRect(marginX - matWidth/2, beamY - 80, matWidth, h - beamY + 80, [6, 6, 0, 0]);
+            ctx.fill(); ctx.stroke();
+            
+            // Mat Droit
+            ctx.beginPath();
+            ctx.roundRect(w - marginX - matWidth/2, beamY - 80, matWidth, h - beamY + 80, [6, 6, 0, 0]);
+            ctx.fill(); ctx.stroke();
+
+            // 2. Dessiner la poutre au repos (ligne guide légère)
+            ctx.beginPath();
+            ctx.setLineDash([6, 6]);
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.moveTo(marginX - matWidth*1.5, beamY);
+            ctx.lineTo(w - marginX + matWidth*1.5, beamY);
+            ctx.stroke();
+            ctx.setLineDash([]); 
+
+            // Calcul visuel
+            const exaggeration = parseFloat(document.getElementById('p_visuel').value);
+            let visFlex = fleche_reelle * exaggeration;
+            if (visFlex > 100) visFlex = 100;
+            if (estCasse) visFlex = 100; 
+
+            // 3. Dessiner les attaches (manchons de la coque autour des mâts)
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+            ctx.shadowBlur = 8;
+            ctx.shadowOffsetY = 4;
+            ctx.fillStyle = couleurPoutre;
+            
+            ctx.beginPath();
+            ctx.roundRect(marginX - matWidth/2 - 6, beamY - 14, matWidth + 12, 28, 6);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.roundRect(w - marginX - matWidth/2 - 6, beamY - 14, matWidth + 12, 28, 6);
+            ctx.fill();
+
+            // 4. Dessiner la poutre (Déformée ou Cassée)
+            ctx.beginPath();
+            ctx.lineWidth = 12;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            if (estCasse) {
+                ctx.strokeStyle = couleurPoutre;
+                let breakX = w / 2;
+                const breakY = beamY + (visFlex/2) + 15; 
+                
+                ctx.moveTo(marginX - matWidth*1.5, beamY);
+                ctx.lineTo(breakX - 5, breakY);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(breakX + 5, breakY);
+                ctx.lineTo(w - marginX + matWidth*1.5, beamY);
+                ctx.stroke();
+
+                // Point de rupture (éclat)
+                ctx.shadowColor = 'transparent'; 
+                ctx.fillStyle = couleurPoutre;
+                ctx.beginPath();
+                ctx.arc(breakX, breakY, 10, 0, Math.PI*2);
+                ctx.fill();
+
+            } else {
+                ctx.strokeStyle = couleurPoutre;
+                ctx.moveTo(marginX - matWidth*1.5, beamY);
+                ctx.quadraticCurveTo(w / 2, beamY + (visFlex * 2), w - marginX + matWidth*1.5, beamY);
+                ctx.stroke();
+            }
+
+            ctx.shadowColor = 'transparent'; // Reset de l'ombre
+
+            // 5. Dessiner la Charge Répartie (Flèches multiples élégantes)
+            const arrowColor = estCasse ? '#ef4444' : '#10b981'; // Red or Emerald
+            ctx.strokeStyle = arrowColor;
+            ctx.fillStyle = arrowColor;
+            ctx.lineWidth = 2.5;
+
+            const numArrows = 9;
+            const spacing = spanVisuel / (numArrows + 1);
+            
+            for(let i=1; i<=numArrows; i++) {
+                const arrowX = marginX + spacing * i;
+                const ratio = Math.abs((w/2) - arrowX) / (spanVisuel/2);
+                let localVisFlex = visFlex * (1 - Math.pow(ratio, 2)); 
+                if(estCasse) localVisFlex = visFlex/2;
+
+                const arrowY_pointe = beamY + localVisFlex - 8;
+                const arrowY_base = arrowY_pointe - 35; // Flèches plus hautes
+
+                // Tige
+                ctx.beginPath();
+                ctx.moveTo(arrowX, arrowY_base);
+                ctx.lineTo(arrowX, arrowY_pointe - 3);
+                ctx.stroke();
+
+                // Pointe de flèche (plus profilée)
+                ctx.beginPath();
+                ctx.moveTo(arrowX, arrowY_pointe + 2);
+                ctx.lineTo(arrowX - 4, arrowY_pointe - 6);
+                ctx.lineTo(arrowX + 4, arrowY_pointe - 6);
+                ctx.fill();
+            }
+            
+            // Bannière de texte pour la charge
+            ctx.fillStyle = arrowColor;
+            ctx.globalAlpha = 0.1;
+            ctx.roundRect(w/2 - 100, beamY - 75, 200, 26, 13);
+            ctx.fill();
+            
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = arrowColor;
+            ctx.font = 'bold 12px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${masse_sur_poutre.toFixed(1)} kg supportés par ce profilé`, w/2, beamY - 58);
+
+            // Cotation L (très propre)
+            const coteY = beamY - 110;
+            ctx.beginPath();
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#94a3b8';
+            ctx.moveTo(marginX, coteY);
+            ctx.lineTo(w - marginX, coteY);
+            ctx.stroke();
+            
+            // Barres de bout de cote
+            ctx.beginPath();
+            ctx.lineWidth = 1.5;
+            ctx.moveTo(marginX, coteY - 6); ctx.lineTo(marginX, coteY + 6);
+            ctx.moveTo(w - marginX, coteY - 6); ctx.lineTo(w - marginX, coteY + 6);
+            ctx.stroke();
+            
+            // Étiquette L
+            ctx.fillStyle = '#64748b';
+            ctx.font = 'bold 13px Inter, sans-serif';
+            // Créer un fond blanc derrière le texte pour couper la ligne
+            ctx.fillStyle = '#ffffff';
+            const textWidth = ctx.measureText(`L = ${L_reel} mm`).width;
+            ctx.fillRect(w/2 - textWidth/2 - 8, coteY - 10, textWidth + 16, 20);
+            
+            ctx.fillStyle = '#64748b';
+            ctx.fillText(`L = ${L_reel} mm`, w/2, coteY + 4);
+        }
+
+        // --- Écouteurs d'événements ---
+        inputs.forEach(input => {
+            input.addEventListener('input', calculateRDM);
+        });
+
+        // Calcul initial
+        window.addEventListener('load', () => {
+            // Un petit timeout pour s'assurer que les polices web sont chargées
+            setTimeout(resizeCanvas, 50); 
+        });
+
+    </script>
+</body>
+</html>
