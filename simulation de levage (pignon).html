@@ -1,0 +1,544 @@
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulation Pignon-Cremaillere v2.4</title>
+    <!-- Chargement des bibliothèques nécessaires -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@500;700&display=swap');
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #0f172a; 
+            color: #f1f5f9; 
+            margin: 0; 
+            padding: 0; 
+        }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Cacher les flèches des inputs numériques */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; margin: 0; 
+        }
+        
+        /* Écran de chargement pour éviter le flash blanc */
+        #loader { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: #0f172a; display: flex; flex-direction: column; 
+            align-items: center; justify-content: center; z-index: 100; 
+            transition: opacity 0.5s; 
+        }
+        .spinner { 
+            width: 40px; height: 40px; border: 4px solid #1e293b; 
+            border-top: 4px solid #3b82f6; border-radius: 50%; 
+            animation: spin 1s linear infinite; margin-bottom: 1rem;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <!-- Écran de chargement -->
+    <div id="loader">
+        <div class="spinner"></div>
+        <div class="text-blue-500 font-bold uppercase tracking-widest text-xs">Initialisation de la simulation...</div>
+    </div>
+    
+    <!-- Conteneur principal de l'application -->
+    <div id="root"></div>
+
+    <!-- Script de l'application React -->
+    <script type="text/babel" data-presets="react">
+        const { useState, useMemo, useEffect } = React;
+
+        const App = () => {
+          // Etats par defaut
+          const [mass, setMass] = useState(100);
+          const [masts, setMasts] = useState(4);
+          const [module, setModule] = useState(2);
+          const [teeth, setTeeth] = useState(15);
+          const [width, setWidth] = useState(20);
+          const [material, setMaterial] = useState('acier');
+          const [safetyFactor, setSafetyFactor] = useState(3); // Ajout du state pour le coeff de sécurité (par défaut à 3 pour l'eau)
+          const [rollerForce, setRollerForce] = useState(50); // Ajout du state pour la force manuelle des galets
+
+          // Dictionnaire des materiaux
+          const materials = {
+            acier: { name: 'Acier (S235)', re: 235 },
+            alu: { name: 'Aluminium', re: 150 },
+            nylon: { name: 'Nylon / PA6', re: 45 },
+          };
+
+          // Moteur de calcul (Methode de Lewis)
+          const results = useMemo(() => {
+            const g = 9.81;
+            const alpha = 20 * (Math.PI / 180);
+            
+            const totalWeightN = mass * g;
+            const ft = masts > 0 ? totalWeightN / masts : 0;
+            const fr = ft * Math.tan(alpha);
+            
+            // --- NOUVELLE PHYSIQUE DU SYSTEME ---
+            // La force radiale nette sur le socle = Fr + 2 * R
+            const fr_net_signed = fr + (rollerForce * 2); 
+            const fres_system = Math.sqrt(ft * ft + fr_net_signed * fr_net_signed); // Nouvelle résultante
+            
+            const diameter = module * teeth;
+            const radius = diameter / 2;
+            
+            const getLewisFactor = (z) => {
+              if (z <= 12) return 0.245;
+              if (z <= 15) return 0.289;
+              if (z <= 20) return 0.337;
+              if (z <= 30) return 0.373;
+              return 0.4;
+            };
+            const Y = getLewisFactor(teeth);
+            
+            // Calcul contrainte Sigma
+            const sigma = (module > 0 && width > 0 && Y > 0) ? ft / (module * width * Y) : 0;
+            const limit = materials[material].re;
+            
+            // Pourcentage réel (non capé) et Jauge de stress limitee a 100% visuellement
+            const actualStressPercent = limit > 0 ? (sigma / limit) * 100 : 0;
+            const stressPercent = Math.min(actualStressPercent, 100);
+            
+            return { 
+                ft, fr, fr_net_signed, fres_system, diameter, radius, sigma, limit, totalWeightN, 
+                stressPercent, actualStressPercent, Y, isSafe: (limit / sigma) >= safetyFactor 
+            };
+          }, [mass, masts, module, teeth, width, material, safetyFactor, rollerForce]);
+
+          // Suppression du loader quand l'app est prete
+          useEffect(() => {
+            const loader = document.getElementById('loader');
+            if (loader) { 
+                loader.style.opacity = '0'; 
+                setTimeout(() => loader.remove(), 500); 
+            }
+          }, []);
+
+          // --- CALCUL DYNAMIQUE DE LA VUE (VIEWBOX) ---
+          const dynamicViewBox = useMemo(() => {
+            const { radius: r, ft, fr, fr_net_signed } = results;
+            const maxArrowLength = Math.max(r + 30, 80);
+            const lenFr = ft > 0 ? maxArrowLength * (fr / ft) : 0;
+            const lenReact = ft > 0 ? maxArrowLength * (rollerForce / ft) : 0;
+            const lenFrNet = ft > 0 ? maxArrowLength * (fr_net_signed / ft) : 0;
+            const rollerDy = Math.max(60, r * 1.2); 
+            
+            const padding = 80;
+            
+            // Calcul des extensions maximales depuis le point de contact (100, 200)
+            const leftExtent = 40 + lenReact + padding + Math.abs(lenFrNet < 0 ? lenFrNet : 0);
+            const rightExtent = Math.max(2 * r + padding, lenFr + padding, (lenFrNet > 0 ? lenFrNet : 0) + padding); 
+            const verticalExtent = Math.max(r + padding, maxArrowLength + padding, rollerDy + 16 + padding); 
+            
+            const minX = 100 - leftExtent;
+            const minY = 200 - verticalExtent;
+            const width = leftExtent + rightExtent;
+            const height = verticalExtent * 2;
+            
+            return `${minX} ${minY} ${width} ${height}`;
+          }, [results, rollerForce]);
+
+          // --- SVG Dessin Technique ---
+          const renderRack = () => {
+            const m = module;
+            const p = Math.PI * m;
+            const add = m;
+            const ded = 1.25 * m;
+            const rackX = 100;
+            const tan20 = Math.tan(20 * Math.PI / 180);
+            
+            const tipW = (p / 4) - (add * tan20);
+            const rootW = (p / 4) + (ded * tan20);
+            
+            const teethElements = [];
+            // Génération de plus de dents pour couvrir les grands dézooms
+            for (let i = -60; i < 60; i++) {
+              const centerY = 200 + (i + 0.5) * p; 
+              teethElements.push(
+                <path 
+                  key={i}
+                  d={`M ${rackX - ded} ${centerY - rootW} L ${rackX + add} ${centerY - tipW} L ${rackX + add} ${centerY + tipW} L ${rackX - ded} ${centerY + rootW} Z`}
+                  fill="#94a3b8"
+                  stroke="#0f172a"
+                  strokeWidth="0.5"
+                />
+              );
+            }
+            return (
+              <g>
+                <rect x={rackX - 40} y="-1000" width={40 - ded} height="2400" fill="#1e293b" rx="2" />
+                {teethElements}
+                <line x1={rackX} y1="-1000" x2={rackX} y2="1400" stroke="#38bdf8" strokeDasharray="4 2" strokeWidth="0.5" className="opacity-50" />
+              </g>
+            );
+          };
+
+          const renderPinion = () => {
+            const { radius: r } = results;
+            const m = module;
+            const z = teeth;
+            const add = m;
+            const ded = 1.25 * m;
+            const p = Math.PI * m;
+            const tan20 = Math.tan(20 * Math.PI / 180);
+
+            const rackX = 100;
+            const pinionX = rackX + r;
+            const pinionY = 200;
+            const angleOffset = Math.PI; 
+            
+            const halfTipAngle = (p / 4 - add * tan20) / (r + add);
+            const halfRootAngle = (p / 4 + ded * tan20) / (r - ded);
+
+            const teethPaths = [];
+            for (let i = 0; i < z; i++) {
+              const angle = (i * 2 * Math.PI) / z + angleOffset;
+              const x1 = Math.cos(angle - halfRootAngle) * (r - ded);
+              const y1 = Math.sin(angle - halfRootAngle) * (r - ded);
+              const x2 = Math.cos(angle - halfTipAngle) * (r + add);
+              const y2 = Math.sin(angle - halfTipAngle) * (r + add);
+              const x3 = Math.cos(angle + halfTipAngle) * (r + add);
+              const y3 = Math.sin(angle + halfTipAngle) * (r + add);
+              const x4 = Math.cos(angle + halfRootAngle) * (r - ded);
+              const y4 = Math.sin(angle + halfRootAngle) * (r - ded);
+              teethPaths.push(<path key={i} d={`M ${x1} ${y1} L ${x2} ${y2} L ${x3} ${y3} L ${x4} ${y4} Z`} stroke="#0f172a" strokeWidth="0.5" />);
+            }
+            
+            const statusColor = results.stressPercent > 90 ? '#f43f5e' : results.stressPercent > 70 ? '#f59e0b' : '#10b981';
+            
+            return (
+              <g transform={`translate(${pinionX}, ${pinionY})`}>
+                <circle cx="0" cy="0" r={r - ded} fill="#94a3b8" stroke="#0f172a" strokeWidth="0.5" />
+                <g fill={results.isSafe ? "#94a3b8" : statusColor}>{teethPaths}</g>
+                {/* Trous d'allegement */}
+                {z > 14 && Array.from({ length: 4 }).map((_, i) => (
+                  <circle key={i} cx={Math.cos(i*Math.PI/2)*r*0.55} cy={Math.sin(i*Math.PI/2)*r*0.55} r={r*0.18} fill="#0f172a" opacity="0.5" />
+                ))}
+                <circle cx="0" cy="0" r={r*0.28} fill="#334155" stroke="#0f172a" />
+                <circle cx="0" cy="0" r="3" fill="white" />
+                <circle cx="0" cy="0" r={r} fill="none" stroke="#38bdf8" strokeDasharray="4 2" strokeWidth="0.5" className="opacity-50" />
+              </g>
+            );
+          };
+
+          // --- SVG Forces Appliquees ---
+          const renderForces = () => {
+            const { radius: r, fr_net_signed } = results;
+            const rackX = 100;
+            const pinionX = rackX + r;
+            const pinionY = 200;
+            
+            // Parametres des galets de guidage (formation en triangle)
+            const rackBackX = rackX - 40; // Position du dos lisse du mat
+            const rollerR = 16; // Rayon des galets (Diamètre 32mm)
+            const rollerX = rackBackX - rollerR;
+            const rollerDy = Math.max(60, r * 1.2); // Ecartement vertical pour former le triangle
+            const rollerY1 = pinionY - rollerDy;
+            const rollerY2 = pinionY + rollerDy;
+            
+            // Mise à l'échelle proportionnelle des vecteurs (Ft est la force de référence)
+            const hasForce = results.ft > 0;
+            const maxArrowLength = Math.max(r + 30, 80); 
+            
+            const lenFt = hasForce ? maxArrowLength : 0;
+            const lenFr = hasForce ? maxArrowLength * (results.fr / results.ft) : 0;
+            const lenPoids = lenFt;
+            const lenReact = hasForce ? maxArrowLength * (rollerForce / results.ft) : 0; 
+            const lenFrNet = hasForce ? maxArrowLength * (fr_net_signed / results.ft) : 0; // Vecteur net de la force radiale
+
+            return (
+              <g className="transition-all duration-300">
+                <defs>
+                  <marker id="arrowFt" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#38bdf8" />
+                  </marker>
+                  <marker id="arrowFr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#ec4899" />
+                  </marker>
+                  <marker id="arrowFres" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#c084fc" />
+                  </marker>
+                  {/* Pointe de flèche plus petite spécifique pour Fr Nette */}
+                  <marker id="arrowFrNet" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                    <path d="M0,0 L5,2.5 L0,5 Z" fill="#c084fc" />
+                  </marker>
+                  <marker id="arrowP" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#f59e0b" />
+                  </marker>
+                  <marker id="arrowReact" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#10b981" />
+                  </marker>
+                </defs>
+                
+                {/* --- GALETS DE GUIDAGE EN TRIANGLE (Dos du mat) --- */}
+                {[rollerY1, rollerY2].map((y, index) => (
+                  <g key={`roller-${index}`} transform={`translate(${rollerX}, ${y})`}>
+                    <circle cx="0" cy="0" r={rollerR} fill="#475569" stroke="#0f172a" strokeWidth="1" />
+                    <circle cx="0" cy="0" r="4" fill="#cbd5e1" stroke="#0f172a" />
+                    <circle cx="0" cy="0" r={rollerR - 4} fill="none" stroke="#0f172a" strokeDasharray="2 2" opacity="0.5" />
+                  </g>
+                ))}
+
+                {/* Point de contact primitif (Pignon) */}
+                <circle cx={rackX} cy={pinionY} r="3" fill="#ef4444" className="animate-pulse" />
+                {/* Points de contact arriere (Galets) */}
+                <circle cx={rackBackX} cy={rollerY1} r="3" fill="#ef4444" />
+                <circle cx={rackBackX} cy={rollerY2} r="3" fill="#ef4444" />
+
+                {hasForce && (
+                  <g>
+                    {/* Lignes de projection du parallélogramme de la NOUVELLE force résultante nette */}
+                    <line x1={rackX} y1={pinionY - lenFt} x2={rackX + lenFrNet} y2={pinionY - lenFt} stroke="#c084fc" strokeWidth="1" strokeDasharray="3 3" opacity="0.4" />
+                    <line x1={rackX + lenFrNet} y1={pinionY} x2={rackX + lenFrNet} y2={pinionY - lenFt} stroke="#c084fc" strokeWidth="1" strokeDasharray="3 3" opacity="0.4" />
+
+                    {/* NOUVELLE Force Résultante Fres (Système complet) */}
+                    <line 
+                      x1={rackX} y1={pinionY} 
+                      x2={rackX + lenFrNet} y2={pinionY - lenFt} 
+                      stroke="#c084fc" strokeWidth="2" markerEnd="url(#arrowFres)" 
+                    />
+                    <text x={rackX + lenFrNet + (lenFrNet >= 0 ? 6 : -6)} y={pinionY - lenFt - 5} textAnchor={lenFrNet >= 0 ? "start" : "end"} fill="#c084fc" fontSize="14" fontWeight="900" fontStyle="italic" className="drop-shadow-md">Fres (Syst.)</text>
+
+                    {/* Force Tangentielle Ft (Reaction de levage du mat sur le pignon) */}
+                    <line 
+                      x1={rackX} y1={pinionY} 
+                      x2={rackX} y2={pinionY - lenFt} 
+                      stroke="#38bdf8" strokeWidth="1.5" markerEnd="url(#arrowFt)" 
+                    />
+                    <text x={rackX - 8} y={pinionY - lenFt + 10} textAnchor="end" fill="#38bdf8" fontSize="14" fontWeight="900" fontStyle="italic" className="drop-shadow-md">Ft</text>
+                    
+                    {/* Force Radiale Fr (Repulsion du mat sur le pignon vers la droite) */}
+                    <line 
+                      x1={rackX} y1={pinionY} 
+                      x2={rackX + lenFr} y2={pinionY} 
+                      stroke="#ec4899" strokeWidth="1.5" markerEnd="url(#arrowFr)" 
+                    />
+                    <text x={rackX + lenFr + 6} y={pinionY - 8} textAnchor="start" fill="#ec4899" fontSize="14" fontWeight="900" fontStyle="italic" className="drop-shadow-md">Fr</text>
+
+                    {/* Force Radiale Nette (Fr Nette) - Superposée à Fr avec une petite pointe */}
+                    <line 
+                      x1={rackX} y1={pinionY} 
+                      x2={rackX + lenFrNet} y2={pinionY} 
+                      stroke="#c084fc" strokeWidth="2.5" strokeDasharray="4 2" markerEnd="url(#arrowFrNet)" 
+                    />
+                    <text x={rackX + lenFrNet + (lenFrNet >= 0 ? 6 : -6)} y={pinionY + 16} textAnchor={lenFrNet >= 0 ? "start" : "end"} fill="#c084fc" fontSize="12" fontWeight="900" fontStyle="italic" className="drop-shadow-md">Fr Nette</text>
+
+                    {/* REACTIONS DES DEUX GALETS (Contre la force radiale) */}
+                    {/* Vectoriellement opposées: Elles pointent vers la gauche tandis que Fr pointe vers la droite */}
+                    <line 
+                      x1={rackBackX} y1={rollerY1} 
+                      x2={rackBackX - lenReact} y2={rollerY1} 
+                      stroke="#10b981" strokeWidth="1.5" markerEnd="url(#arrowReact)" 
+                    />
+                    <text x={rackBackX - lenReact - 6} y={rollerY1 + 4} textAnchor="end" fill="#10b981" fontSize="11" fontWeight="900" fontStyle="italic" className="drop-shadow-md">R1</text>
+
+                    <line 
+                      x1={rackBackX} y1={rollerY2} 
+                      x2={rackBackX - lenReact} y2={rollerY2} 
+                      stroke="#10b981" strokeWidth="1.5" markerEnd="url(#arrowReact)" 
+                    />
+                    <text x={rackBackX - lenReact - 6} y={rollerY2 + 4} textAnchor="end" fill="#10b981" fontSize="11" fontWeight="900" fontStyle="italic" className="drop-shadow-md">R2</text>
+
+                    {/* Force de Poids (Gravite agissant sur l'axe du pignon) */}
+                    <line 
+                      x1={pinionX} y1={pinionY} 
+                      x2={pinionX} y2={pinionY + lenPoids} 
+                      stroke="#f59e0b" strokeWidth="1.5" markerEnd="url(#arrowP)" 
+                    />
+                    <text x={pinionX + 8} y={pinionY + lenPoids} textAnchor="start" fill="#f59e0b" fontSize="14" fontWeight="900" fontStyle="italic" className="drop-shadow-md">Poids</text>
+                  </g>
+                )}
+              </g>
+            );
+          };
+
+          return (
+            <div className="min-h-screen p-4 lg:p-6 bg-[#0f172a]">
+              <div className="max-w-7xl mx-auto">
+                {/* EN-TETE */}
+                <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-800 pb-6 text-white uppercase font-black tracking-tight">
+                  <h1 className="text-2xl italic">Simulation Pignon-Cremaillere</h1>
+                  <span className="text-xs text-slate-500 font-mono">v2.4 Visual Engineer</span>
+                </header>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  
+                  {/* --- GAUCHE : PARAMETRES --- */}
+                  <div className="lg:col-span-4 space-y-6">
+                    <section className="bg-slate-800/50 border border-slate-700 p-6 rounded-3xl shadow-xl">
+                      <h2 className="text-xs font-black text-blue-400 uppercase tracking-widest mb-6 italic underline">1. Charge & Mats</h2>
+                      <div className="space-y-6">
+                        <div>
+                          <div className="flex justify-between mb-2">
+                            <label className="text-xs font-bold text-slate-300">MASSE (kg)</label>
+                            <span className="text-xs text-blue-400 font-mono font-bold">{results.totalWeightN.toFixed(2)} N</span>
+                          </div>
+                          <input type="number" value={mass} onChange={(e) => setMass(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 outline-none text-blue-400 font-bold font-mono text-lg" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-slate-300 block mb-3 uppercase">Pignons de levage</label>
+                          <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-700">
+                            {[1, 2, 4, 6].map(n => (
+                                <button key={n} onClick={() => setMasts(n)} className={`flex-1 py-2.5 rounded-lg text-xs font-black transition-all ${masts === n ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
+                                    {n}
+                                </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-slate-300 block mb-3 uppercase">Coeff. de Sécurité Requis</label>
+                          <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-700">
+                            {[1.5, 2, 3, 4].map(n => (
+                                <button key={n} onClick={() => setSafetyFactor(n)} className={`flex-1 py-2.5 rounded-lg text-xs font-black transition-all ${safetyFactor === n ? 'bg-amber-500 text-slate-900 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
+                                    {n}
+                                </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-slate-300 block mb-3 uppercase">Force des galets R1/R2 (N)</label>
+                          <input type="number" value={rollerForce} onChange={(e) => setRollerForce(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl text-sm font-black font-mono text-emerald-400 outline-none" />
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="bg-slate-800/50 border border-slate-700 p-6 rounded-3xl shadow-xl">
+                      <h2 className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-6 italic underline">2. Geometrie</h2>
+                      <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div className="col-span-2 bg-slate-900/80 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                          <div><span className="text-[10px] text-slate-500 uppercase block font-bold">Diametre Primitif</span><span className="text-xl font-black text-white font-mono">{results.diameter.toFixed(2)} mm</span></div>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500 uppercase font-bold block mb-2 font-mono tracking-tight">Module (m)</label>
+                          <select value={module} onChange={(e) => setModule(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl text-sm font-black font-mono text-emerald-400 outline-none">
+                            {[1, 1.5, 2, 2.5, 3, 4, 5].map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500 uppercase font-bold block mb-2 font-mono tracking-tight">Dents (Z)</label>
+                          <input type="number" value={teeth} onChange={(e) => setTeeth(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl text-sm font-black font-mono outline-none" />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-500 uppercase font-bold block mb-2 font-mono">Largeur face b (mm)</label>
+                          <input type="number" value={width} onChange={(e) => setWidth(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none text-emerald-400 font-bold font-mono" />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        {Object.entries(materials).map(([key, mat]) => (
+                          <button key={key} onClick={() => setMaterial(key)} className={`w-full p-3 text-left rounded-xl border transition-all flex justify-between items-center ${material === key ? 'bg-blue-600/10 border-blue-500 text-blue-200 shadow-lg' : 'bg-slate-900 border-slate-800 opacity-60 hover:opacity-100'}`}>
+                            <span className="text-xs font-black font-mono uppercase tracking-tighter">{mat.name}</span>
+                            <span className="text-xs font-mono text-slate-400">{mat.re.toFixed(2)} MPa</span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+
+                  {/* --- DROITE : VISUEL & ANALYSE --- */}
+                  <div className="lg:col-span-8 space-y-6">
+                    {/* Suppression du h-[480px] pour éviter la superposition des blocs */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      
+                      {/* SCHEMA SVG */}
+                      <section className="bg-slate-900 rounded-[2rem] border-2 border-slate-800 overflow-hidden relative shadow-2xl flex flex-col min-h-[420px]">
+                        <div className="p-5 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center text-slate-500 font-black text-[10px] uppercase tracking-widest italic">
+                          <span>Plan Technique & Forces</span>
+                        </div>
+                        <div className="flex-1 flex items-center justify-center bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px]">
+                          <svg viewBox={dynamicViewBox} className="w-full h-full p-4 overflow-hidden transition-all duration-700 ease-out">
+                            {renderRack()}
+                            {renderPinion()}
+                            {renderForces()}
+                          </svg>
+                        </div>
+                      </section>
+
+                      {/* EFFORTS & SECURITE - Refonte en grille pour aérer le contenu */}
+                      <div className="space-y-6 flex flex-col">
+                        <section className="bg-slate-800/50 border border-slate-700 p-5 rounded-3xl shadow-xl flex-1 flex flex-col justify-between">
+                          <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 italic underline">Analyse des Efforts (N)</h2>
+                          
+                          <div className="grid grid-cols-2 gap-3 mb-4">
+                            <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-700 flex flex-col justify-center items-center text-center">
+                              <span className="text-[9px] text-slate-500 uppercase font-black block mb-1">Levage (Ft)</span>
+                              <span className="text-lg font-black text-blue-400 font-mono">{results.ft.toFixed(2)}</span>
+                            </div>
+                            <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-700 flex flex-col justify-center items-center text-center">
+                              <span className="text-[9px] text-slate-500 uppercase font-black block mb-1">Pression Brute (Fr)</span>
+                              <span className="text-lg font-black text-[#ec4899] font-mono">{results.fr.toFixed(2)}</span>
+                            </div>
+                            <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-700 flex flex-col justify-center items-center text-center">
+                              <span className="text-[9px] text-slate-500 uppercase font-black block mb-1">Fr Nette (Système)</span>
+                              <span className="text-lg font-black text-[#c084fc] font-mono">{Math.abs(results.fr_net_signed).toFixed(2)}</span>
+                            </div>
+                            <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-700 flex flex-col justify-center items-center text-center">
+                              <span className="text-[9px] text-slate-500 uppercase font-black block mb-1">Fres (Système)</span>
+                              <span className="text-lg font-black text-[#c084fc] font-mono">{results.fres_system.toFixed(2)}</span>
+                            </div>
+                          </div>
+
+                          <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-700 flex justify-between items-center mb-4">
+                            <div>
+                              <span className="text-[10px] text-slate-500 uppercase font-black block">Réactions Galets (R1 = R2)</span>
+                              <span className="text-[9px] text-slate-400 font-mono italic mt-1 block">Maintien total : {(rollerForce * 2).toFixed(2)} N</span>
+                            </div>
+                            <div className="text-right flex flex-col">
+                              <span className="text-lg font-black text-[#10b981] font-mono">{rollerForce.toFixed(2)} <span className="text-[10px]">N / galet</span></span>
+                            </div>
+                          </div>
+
+                          <div className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center text-center ${results.isSafe ? 'bg-emerald-500/5 border-emerald-500/30 shadow-emerald-500/5' : 'bg-rose-500/5 border-rose-500/30 shadow-rose-500/5 animate-pulse'}`}>
+                            <h3 className={`text-xl font-black mb-1 ${results.isSafe ? 'text-emerald-400' : 'text-rose-400'}`}>{results.isSafe ? "VALIDE" : "DANGER"}</h3>
+                            <p className="text-[10px] text-slate-500 uppercase font-black">Securite Actuelle : {(results.limit/results.sigma).toFixed(2)} / {safetyFactor}</p>
+                          </div>
+                        </section>
+                      </div>
+                    </div>
+
+                    {/* JAUGE DE CONTRAINTE */}
+                    <div className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 shadow-xl space-y-6">
+                        <div className="flex justify-between items-center text-slate-300">
+                          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest italic underline">Stress pied de dent (MPa)</h3>
+                          <div className="flex items-center gap-3">
+                            <span className={`px-2 py-1 rounded-lg text-xs font-black font-mono border ${results.actualStressPercent > (100 / safetyFactor) ? 'bg-rose-500/20 border-rose-500/50 text-rose-400' : 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'}`}>
+                              {results.actualStressPercent.toFixed(2)} %
+                            </span>
+                            <span className={`text-2xl font-black font-mono ${results.stressPercent > 90 ? 'text-rose-500' : 'text-emerald-400'}`}>{results.sigma.toFixed(2)} <span className="text-sm font-normal">MPa</span></span>
+                          </div>
+                        </div>
+                        <div className="relative h-8 bg-slate-900 rounded-2xl border-2 border-slate-700 p-1 overflow-hidden shadow-inner">
+                          <div className={`h-full rounded-xl transition-all duration-1000 ease-out flex items-center justify-end px-3 ${results.stressPercent > 90 ? 'bg-rose-500 shadow-lg shadow-rose-500/20' : 'bg-emerald-500 shadow-lg shadow-emerald-500/20'}`} style={{ width: `${results.stressPercent}%` }}>
+                            {results.stressPercent > 15 && <span className="text-[10px] font-black text-white">{results.stressPercent.toFixed(2)}%</span>}
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-500 italic">
+                          <div>Repos</div><div className="text-rose-500">Limite de rupture {results.limit.toFixed(2)} MPa</div>
+                        </div>
+                    </div>
+
+                    {/* VALEURS DE REFERENCE */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                       <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Poids / Pignon</span><span className="font-mono text-sm text-slate-300 font-bold">{(results.totalWeightN / masts).toFixed(2)} N</span></div>
+                       <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Pas (p)</span><span className="font-mono text-sm text-slate-300 font-bold">{(Math.PI * module).toFixed(2)} mm</span></div>
+                       <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Facteur Y</span><span className="font-mono text-sm text-slate-300 font-bold">{results.Y.toFixed(2)}</span></div>
+                       <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Pesanteur (g)</span><span className="font-mono text-sm text-slate-300 font-bold">9.81</span></div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        };
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
