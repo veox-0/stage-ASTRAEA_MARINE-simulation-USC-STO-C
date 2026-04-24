@@ -5,7 +5,7 @@ Codes sources des simulations en HTML réalisées lors de mon stage chez Astraea
 
 Ce dépôt contient les codes que j'ai réalisé à l'aide d'une IA durant mon stage chez ASTRAEA MARINE.
 
-Ces interfaces ont été conçues pour appuyer la conception et le dimensionnement d'un prototype d'USV (Unmanned Surface Vehicle).
+Ces interfaces ont été conçues pour appuyer la conception et le dimensionnement d'un prototype d'USV (Unmanned Surface Vessel).
 
 ## 📂 Contenu du dépôt
 
